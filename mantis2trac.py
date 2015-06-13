@@ -601,7 +601,7 @@ def convert(_db, _host, _user, _password, _env, _force):
     print "Mantis MySQL('%s':'%s':'%s':'%s'): connecting..." % (_db, _host, _user, _password)
     mysql_con = MySQLdb.connect(host=_host, 
                 user=_user, passwd=_password, db=_db, compress=1, 
-                cursorclass=MySQLdb.cursors.DictCursor, use_unicode=1)
+                cursorclass=MySQLdb.cursors.DictCursor, use_unicode=1, charset='utf8')
     mysql_cur = mysql_con.cursor()
 
     # init Trac environment
@@ -918,7 +918,6 @@ def convert(_db, _host, _user, _password, _env, _force):
         mysql_cur.execute(attachment_sql)
         attachments = mysql_cur.fetchall()
         for attachment in attachments:
-	    print attachment['user_id']
             author = trac.getLoginName(mysql_cur, attachment['user_id'])
 
             # Old attachment stuff that never worked...
@@ -938,13 +937,15 @@ def convert(_db, _host, _user, _password, _env, _force):
                             print errorStr
                     # trac stores the files with the special characters like spaces in the filename encoded to the url 
                     # equivalents, so we have to urllib.quote() the filename we're saving. 
-                    attachmentFile = open(trac.get_attachments_dir(bugid) + quote(attachment['filename']),'wb')
+                    path = trac.get_attachments_dir(bugid) + quote(attachment['filename'].encode('utf8'))
+                    attachmentFile = open(path, 'wb')
                     attachmentFile.write(attachment['content'])
                     attachmentFile.close()
                 except:
                     errorStr = " * ERROR: couldnt dump attachment data into filesystem at %s" % trac.get_attachments_dir(bugid) + attachment['filename']
                     errors.append(errorStr)
                     print errorStr
+                    raise
                 else:
                     attach_sql = """INSERT INTO attachment (type,id,filename,size,time,description,author,ipnr) VALUES ('ticket',%s,'%s',%i,%i,'%s','%s','127.0.0.1')""" % (bugid,attachment['filename'].encode('utf-8'),attachment['filesize'],trac.convertTime(attachment['date_added']),attachment['description'].encode('utf-8'),author)
                     try:
@@ -957,16 +958,28 @@ def convert(_db, _host, _user, _password, _env, _force):
                         print errorStr
                     else:
                         print 'inserting attachment for ticket %s -- %s, added by %s' % (bugid, attachment['description'], author)
-
                         totalAttachments += 1
+
+			old_path = 'importfiles/%s/%s' % (bugid, quote(attachment['filename'].encode('utf8')))
+			new_path = TRAC_ENV + '/attachments/ticket/%s/' % (bugid)
+
+			print new_path
+
+			try:
+			  os.makedirs(new_path)
+			except:
+			  print
+
+			new_path += quote(attachment['filename'].encode('utf8'))
+			"""
 			hash      = hashlib.sha1()
-		        hash.update(str(bugid).encode('utf-8'))
+			hash.update(str(bugid).encode('utf-8'))
 			path_hash = hash.hexdigest()
-		        hash      = hashlib.sha1()
+			hash      = hashlib.sha1()
 			hash.update(attachment['filename'].encode('utf-8'))
 			file_hash = hash.hexdigest()
-		        old_path  = 'importfiles/%s/%s' % (bugid, quote(attachment['filename']))
-		        new_path  = TRAC_ENV + '/files/attachments/ticket/'
+			old_path  = 'importfiles/%s/%s' % (bugid, quote(attachment['filename'].encode('utf8')))
+			new_path  = TRAC_ENV + '/attachments/ticket/'
 			new_path += '%s/%s/' % (path_hash[0:3], path_hash)
 			try:
 			  os.makedirs(new_path)
@@ -974,13 +987,15 @@ def convert(_db, _host, _user, _password, _env, _force):
 			  print
 			new_path += file_hash
 			new_path += os.path.splitext(attachment['filename'])[1]
+			"""
 			os.rename(old_path, new_path) 
             except:
                 errorStr = " * ERROR: couldn't migrate attachment %s" % attachment['filename']
                 errors.append(errorStr)
                 print errorStr
+                raise
+	print
 
-    print
     if TIME_ADJUSTMENT_HACK:
         for adjustment in timeAdjustmentHacks:
             print adjustment
